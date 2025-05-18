@@ -8,9 +8,18 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 
 cities = {
-    "москва": ["1652229/5a2b3f64bb49bf9d762d", "13200873/147fb7857d1556b9c81c"],
-    "нью-йорк": ["1652229/9487e851b99277d0c8d2", "1533899/1f37db77b17051ff19fc"],
-    "париж": ["1652229/e63f4d34bafba01c4d9d", "1652229/0a68aef7beb2ffe6b1b9"],
+    "москва": {
+        "images": ["1652229/5a2b3f64bb49bf9d762d", "13200873/147fb7857d1556b9c81c"],
+        "country": "россия"
+    },
+    "нью-йорк": {
+        "images": ["1652229/9487e851b99277d0c8d2", "1533899/1f37db77b17051ff19fc"],
+        "country": "сша"
+    },
+    "париж": {
+        "images": ["1652229/e63f4d34bafba01c4d9d", "1652229/0a68aef7beb2ffe6b1b9"],
+        "country": "франция"
+    },
 }
 
 sessionStorage = {}
@@ -47,7 +56,8 @@ def handle_dialogue(res: dict, req: dict) -> None:
         res["response"]["text"] = "Привет! Назови свое имя!"
         sessionStorage[user_id] = {
             "first_name": None,
-            "game_started": False
+            "game_started": False,
+            "asking_country": False
         }
         return
 
@@ -58,8 +68,7 @@ def handle_dialogue(res: dict, req: dict) -> None:
             first_name = get_first_name(req)
             
             if first_name is None:
-                res["response"]["text"] = \
-                    "Не расслышала имя. Повтори, пожалуйста!"
+                res["response"]["text"] = "Не расслышала имя. Повтори, пожалуйста!"
             else:
                 sessionStorage[user_id]["first_name"] = first_name
                 sessionStorage[user_id]["guessed_cities"] = []
@@ -70,7 +79,7 @@ def handle_dialogue(res: dict, req: dict) -> None:
                     {"title": "Помощь", "hide": True},
                 ]
     else:
-        if not sessionStorage[user_id]["game_started"]:
+        if not sessionStorage[user_id]["game_started"] and not sessionStorage[user_id]["asking_country"]:
             if "да" in req["request"]["nlu"]["tokens"]:
                 if len(sessionStorage[user_id]["guessed_cities"]) == 3:
                     res["response"]["text"] = "Ты отгадал все города!"
@@ -96,6 +105,11 @@ def handle_dialogue(res: dict, req: dict) -> None:
 
 def play_game(res: dict, req: dict) -> None:
     user_id = req["session"]["user_id"]
+    
+    if sessionStorage[user_id]["asking_country"]:
+        handle_country_guess(res, req)
+        return
+    
     attempt = sessionStorage[user_id]["attempt"]
     
     res["response"]["buttons"] = [
@@ -113,25 +127,14 @@ def play_game(res: dict, req: dict) -> None:
             res["response"]["card"] = {
                 "type": "BigImage",
                 "title": "Что это за город?",
-                "image_id": cities[city][attempt - 1]
+                "image_id": cities[city]["images"][attempt - 1]
             }
             res["response"]["text"] = "Тогда сыграем!"
         else:
             city = sessionStorage[user_id]["city"]
             if get_city(req) == city:
-                res["response"]["text"] = "Правильно! Сыграем ещё?"
-                res["response"]["buttons"] = [
-                    {
-                        "title": "Показать город на карте",
-                        "url": f"https://yandex.ru/maps/?mode=search&text={city.capitalize()}",
-                        "hide": True
-                    },
-                    {"title": "Да", "hide": True},
-                    {"title": "Нет", "hide": True},
-                    {"title": "Помощь", "hide": True},
-                ]
-                sessionStorage[user_id]["guessed_cities"].append(city)
-                sessionStorage[user_id]["game_started"] = False
+                sessionStorage[user_id]["asking_country"] = True
+                res["response"]["text"] = f"Правильно! А в какой стране находится {city.title()}?"
                 return
             else:
                 if attempt == 3:
@@ -153,16 +156,50 @@ def play_game(res: dict, req: dict) -> None:
                     res["response"]["card"] = {
                         "type": "BigImage",
                         "title": "Неправильно. Вот тебе дополнительное фото",
-                        "image_id": cities[city][attempt - 1]
+                        "image_id": cities[city]["images"][attempt - 1]
                     }
                     res["response"]["text"] = "А вот и не угадал!"
         sessionStorage[user_id]["attempt"] += 1
+
+
+def handle_country_guess(res: dict, req: dict) -> None:
+    user_id = req["session"]["user_id"]
+    city = sessionStorage[user_id]["city"]
+    correct_country = cities[city]["country"]
+    
+    country = get_country(req)
+    
+    if country and country.lower() == correct_country:
+        res["response"]["text"] = f"Верно! Сыграем ещё?"
+    else:
+        res["response"]["text"] = f"Не совсем. {city.title()} находится в {correct_country.title()}. Сыграем ещё?"
+    
+    res["response"]["buttons"] = [
+        {
+            "title": "Показать город на карте",
+            "url": f"https://yandex.ru/maps/?mode=search&text={city.capitalize()}",
+            "hide": True
+        },
+        {"title": "Да", "hide": True},
+        {"title": "Нет", "hide": True},
+        {"title": "Помощь", "hide": True},
+    ]
+    
+    sessionStorage[user_id]["guessed_cities"].append(city)
+    sessionStorage[user_id]["game_started"] = False
+    sessionStorage[user_id]["asking_country"] = False
 
 
 def get_city(req: dict) -> Optional[str]:
     for entity in req["request"]["nlu"]["entities"]:
         if entity["type"] == "YANDEX.GEO":
             return entity["value"].get("city", None)
+
+
+def get_country(req: dict) -> Optional[str]:
+    for entity in req["request"]["nlu"]["entities"]:
+        if entity["type"] == "YANDEX.GEO":
+            return entity["value"].get("country", None)
 
 
 def get_first_name(req: dict) -> Optional[str]:
