@@ -120,12 +120,32 @@ def play_game(res: dict, req: dict) -> None:
             city = sessionStorage[user_id]["city"]
             if get_city(req) == city:
                 res["response"]["text"] = "Правильно! Сыграем ещё?"
+                res["response"]["buttons"] = [
+                    {
+                        "title": "Показать город на карте",
+                        "url": f"https://yandex.ru/maps/?mode=search&text={city.capitalize()}",
+                        "hide": True
+                    },
+                    {"title": "Да", "hide": True},
+                    {"title": "Нет", "hide": True},
+                    {"title": "Помощь", "hide": True},
+                ]
                 sessionStorage[user_id]["guessed_cities"].append(city)
                 sessionStorage[user_id]["game_started"] = False
                 return
             else:
                 if attempt == 3:
                     res["response"]["text"] = f"Вы пытались. Это {city.title()}. Сыграем ещё?"
+                    res["response"]["buttons"] = [
+                        {
+                            "title": "Показать город на карте",
+                            "url": f"https://yandex.ru/maps/?mode=search&text={city.capitalize()}",
+                            "hide": True
+                        },
+                        {"title": "Да", "hide": True},
+                        {"title": "Нет", "hide": True},
+                        {"title": "Помощь", "hide": True},
+                    ]
                     sessionStorage[user_id]["game_started"] = False
                     sessionStorage[user_id]["guessed_cities"].append(city)
                     return
